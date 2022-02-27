@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: haproxycfg
+  namespace: server
+data:
+  haproxy.cfg: |
+    global
+            ulimit-n  1048575
+    defaults
+            log     global
+            mode    tcp
+            option  dontlognull
+            timeout connect 1000
+            timeout client 150000
+            timeout server 150000
+    frontend http-in
+            bind 0.0.0.0:8080
+            default_backend http-out
+    backend http-out
+            balance roundrobin
+            default-server check maxconn 20
+            server server1 traefik.server.svc:80
+    frontend https-in
+            bind 0.0.0.0:6443
+            default_backend https-out
+    backend https-out
+            balance roundrobin
+            default-server check maxconn 20
+            server server1 traefik.server.svc:443
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: haproxy
+  namespace: server
+  labels:
+    app: haproxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: haproxy
+  template:
+    metadata:
+      labels:
+        app: haproxy
+    spec:
+      containers:
+        - name: haproxy
+          image: haproxy:alpine
+          ports:
+            - name: http
+              containerPort: 8080
+              hostPort: 80
+            - name: https
+              containerPort: 6443
+              hostPort: 443
+          volumeMounts:
+            - name: haproxycfg
+              mountPath: /usr/local/etc/haproxy
+      volumes:
+        - name: haproxycfg
+          configMap:
+            name: haproxycfg
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                - key: node-role.kubernetes.io/loadbalancer
+                  operator: Exists 
